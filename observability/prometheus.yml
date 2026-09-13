@@ -5,6 +5,7 @@ scrape_configs:
   - job_name: seatlock-backend
     metrics_path: /actuator/prometheus
     static_configs:
-      # host.docker.internal lets the Prometheus container reach the backend running on the host
-      # (outside docker-compose) — this is how the backend is run for local dev in this project.
-      - targets: ["host.docker.internal:8090"]
+      # "app" is the backend's service name on the docker-compose network (see docker-compose.yml).
+      # If you're running the backend outside Compose (e.g. via ./mvnw spring-boot:run) instead,
+      # use host.docker.internal:8090 here so the Prometheus container can reach the host.
+      - targets: ["app:8090"]

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EventDto, getEvent, publishEvent } from "@/services/eventsApi";
 import { SeatDefinition, createSeats, listSeats } from "@/services/seatsApi";
@@ -24,12 +24,7 @@ export default function EventDetailsPage({ params }: PageProps<"/events/[id]">) 
 
   const isOwner = user && event && user.id === event.organizerId;
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const [eventData, seats] = await Promise.all([getEvent(id), listSeats(id)]);
       setEvent(eventData);
@@ -37,7 +32,14 @@ export default function EventDetailsPage({ params }: PageProps<"/events/[id]">) 
     } catch {
       setError("Could not load this event");
     }
-  }
+  }, [id]);
+
+  useEffect(() => {
+    // Standard fetch-on-mount: load()'s setState calls happen after its first await, not
+    // synchronously in this effect body, despite what the rule's static analysis assumes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
 
   async function handleGenerateLayout(e: React.FormEvent) {
     e.preventDefault();

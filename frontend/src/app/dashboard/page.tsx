@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { EventDto, EventStatsDto, getEventStats, listMyEvents, publishEvent } from "@/services/eventsApi";
 import { useAuth } from "@/hooks/useAuth";
@@ -25,13 +25,7 @@ export default function OrganizerDashboardPage() {
 
   const canAccess = user?.role === "ORGANIZER" || user?.role === "ADMIN";
 
-  useEffect(() => {
-    if (!hydrated || !canAccess) return;
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, canAccess]);
-
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const page = await listMyEvents();
       const withStats = await Promise.all(
@@ -48,7 +42,15 @@ export default function OrganizerDashboardPage() {
     } catch {
       setError("Could not load your events");
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || !canAccess) return;
+    // Standard fetch-on-mount: load()'s setState calls happen after its first await, not
+    // synchronously in this effect body, despite what the rule's static analysis assumes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [hydrated, canAccess, load]);
 
   async function handlePublish(eventId: string) {
     setPublishingId(eventId);

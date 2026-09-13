@@ -2,7 +2,7 @@ spring:
   application:
     name: seatlock
   datasource:
-    url: jdbc:postgresql://localhost:5433/seatlock
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:seatlock}
     username: ${DB_USERNAME:seatlock}
     password: ${DB_PASSWORD:seatlock}
   jpa:

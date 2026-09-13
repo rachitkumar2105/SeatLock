@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AdminUserDto, PlatformMetricsDto, cancelEvent, getMetrics, listAllEvents, listUsers, updateUserRole } from "@/services/adminApi";
 import { EventDto } from "@/services/eventsApi";
 import { Role } from "@/store/authStore";
@@ -25,13 +25,7 @@ export default function AdminDashboardPage() {
 
   const isAdmin = user?.role === "ADMIN";
 
-  useEffect(() => {
-    if (!hydrated || !isAdmin) return;
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, isAdmin]);
-
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const [metricsData, usersPage, eventsPage] = await Promise.all([getMetrics(), listUsers(), listAllEvents()]);
       setMetrics(metricsData);
@@ -40,7 +34,15 @@ export default function AdminDashboardPage() {
     } catch {
       setError("Could not load admin data");
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || !isAdmin) return;
+    // Standard fetch-on-mount: load()'s setState calls happen after its first await, not
+    // synchronously in this effect body, despite what the rule's static analysis assumes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [hydrated, isAdmin, load]);
 
   async function handleRoleChange(userId: string, role: Role) {
     setBusyId(userId);

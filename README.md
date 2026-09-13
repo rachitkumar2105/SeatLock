@@ -2,7 +2,9 @@
 
 Real-time seat & ticket booking platform. Built phase-by-phase per `SeatLock_Technical_Blueprint.pdf`.
 
-## Status: Phase 5 complete (Weeks 1-7 of the roadmap)
+## Status: Phase 6 complete (Weeks 1-8 of the roadmap) — MVP through Tier 2 done
+
+[![CI](https://github.com/rachitkumar2105/SeatLock/actions/workflows/ci.yml/badge.svg)](https://github.com/rachitkumar2105/SeatLock/actions/workflows/ci.yml)
 
 **Phase 1**
 - Spring Boot 4 skeleton (Java 21, Maven wrapper)
@@ -84,18 +86,54 @@ roles/moderates events/reads metrics, a plain user is forbidden from admin endpo
 cache (a lock is visible on the very next read despite caching), and the rate limiter (exceeding
 the login limit returns 429 with `Retry-After`).
 
-Not yet built: CI/deployment (Phase 6).
+**Phase 6**
+- **`docker compose up` brings up the entire system from a clean clone** — Postgres, Redis, the
+  Spring Boot backend, and the Next.js frontend, all containerized (`backend/Dockerfile`,
+  `frontend/Dockerfile`, both multi-stage builds). Verified for real: `docker compose down` (full
+  teardown) → `docker compose up -d --build` → all four containers report healthy → registered a
+  user, logged in, and browsed events entirely through the built (non-dev) frontend talking to the
+  built backend jar
+- **GitHub Actions CI** (`.github/workflows/ci.yml`), three jobs: backend build+test (Postgres and
+  Redis as service containers), frontend lint+build, and a `docker compose up` smoke test that
+  builds the real images, waits for the backend to report ready, and hits register/login against
+  the live containerized stack before tearing down
+- Fixed the last **4 real lint errors** surfaced by Next.js 16's stricter `react-hooks` rules
+  while wiring up the `frontend-build` CI job (a function called before its lexical declaration in
+  two pages, and a `setState`-in-effect false-positive on the standard fetch-on-mount idiom in
+  three places — see the honesty notes below) plus a genuine one in `SeatCell`'s countdown timer,
+  restructured so the derived value is computed in render and the effect only drives the tick
+
+**What Phase 6 explicitly does *not* include** (per the blueprint's own instruction never to claim
+Tier 3/unbuilt work): no actual cloud deployment — see "Deploying it for real" below for what that
+would take — and no demo recording. Both are legitimate to add later; neither is done today.
+
+Integration tests: full auth flow (register → login → refresh → logout, including refresh-token
+rotation and reuse detection), event flow (organizer creates + publishes, a plain user is
+forbidden), booking flow (lock → book → idempotent retry, booking without a lock is rejected,
+release-then-relock by another user), the seat-lock concurrency test above, the admin/dashboard
+flow (organizer sees own events + stats, a non-owner is forbidden, admin lists users/updates
+roles/moderates events/reads metrics, a plain user is forbidden from admin endpoints), the seat-map
+cache (a lock is visible on the very next read despite caching), and the rate limiter (exceeding
+the login limit returns 429 with `Retry-After`).
 
 ## Running locally
+
+**Option A — the whole stack, one command** (what CI's smoke test does):
+```bash
+docker compose up -d --build
+```
+Brings up Postgres, Redis, the backend (`http://localhost:8090`), and the frontend
+(`http://localhost:3100`). First build takes a few minutes; subsequent ones are cached.
+
+**Option B — infra in Docker, app code on the host** (faster edit/reload loop during development):
 
 1. Start Postgres and Redis:
    ```bash
    docker compose up -d postgres redis
    ```
    (Postgres maps to host port **5433**, Redis to **6380** — both non-default, chosen to avoid
-   clashing with locally installed services. See `docker-compose.yml` /
-   `backend/src/main/resources/application.yml`.) Redis is optional at runtime — the backend
-   starts and serves correctly without it, just without caching or rate limiting.
+   clashing with locally installed services.) Redis is optional at runtime — the backend starts
+   and serves correctly without it, just without caching or rate limiting.
 
 2. Run the backend (defaults to port **8090**, not 8080 — see "Known environment quirks" below):
    ```bash
@@ -116,6 +154,22 @@ Not yet built: CI/deployment (Phase 6).
    cd backend
    ./mvnw test
    ```
+
+## Deploying it for real
+
+Not done — this is what it would take, per the blueprint's own recommendation (Render/Railway free
+tier, or a single small VM running the Compose stack), rather than pretending it's live:
+
+- Push `backend` and `frontend` as two services (Render/Railway both build straight from a
+  Dockerfile) plus a managed Postgres add-on and a managed Redis add-on.
+- Set real values for `JWT_SECRET`, `DB_*`, `REDIS_*`, and `CORS_ALLOWED_ORIGINS` (the frontend's
+  real domain) as platform secrets/env vars — never the dev defaults baked into
+  `application.yml`.
+- Rebuild the frontend image with `NEXT_PUBLIC_API_BASE_URL`/`NEXT_PUBLIC_WS_URL` pointed at the
+  backend's real deployed URL — these are baked in at build time (see `frontend/Dockerfile`), so
+  they can't be swapped via runtime env vars after the image is built.
+- Terminate TLS at the platform's edge (both Render and Railway do this automatically) so the
+  `Secure` cookie flags `CookieUtil` already sets actually mean something in production.
 
 ## Known environment quirks (and real bugs found along the way)
 
@@ -154,8 +208,10 @@ interview-useful than the feature list itself.
 - **Testcontainers can't reach Docker Desktop's npipe** on this machine — Docker Desktop's newer
   Windows npipe protocol wraps a CLI-only handshake that generic Docker API clients can't
   complete. The standard fix (exposing the daemon over unauthenticated TCP) was deliberately not
-  applied. All integration tests instead run against the docker-compose Postgres directly. This
-  should be revisited before attempting a Testcontainers-based CI pipeline in Phase 6.
+  applied. All integration tests instead run against the docker-compose Postgres directly.
+  Resolved for CI without ever needing Testcontainers: GitHub Actions' Linux runners have native
+  Docker, so `.github/workflows/ci.yml` uses plain `services:` (Postgres + Redis as sibling
+  containers) instead — same effect, no npipe involved at all.
 - **Real bug: the Redis cache silently never wrote anything.** `GenericJackson2JsonRedisSerializer`'s
   no-arg constructor builds its own internal `ObjectMapper` with default typing on but *without*
   the JSR-310 module, so every cache write of a `Seat` (which has an `Instant` field) threw and was

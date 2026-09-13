@@ -38,7 +38,6 @@ export default function SeatSelectionPage({ params }: PageProps<"/events/[id]/se
         setSeats(seatData);
       })
       .catch(() => setError("Could not load the seat map"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   function pushToast(message: string) {

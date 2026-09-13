@@ -28,17 +28,20 @@ export function SeatCell({
   isPending: boolean;
   onClick: () => void;
 }) {
-  const [remaining, setRemaining] = useState(() => secondsRemaining(seat.lockExpiresAt));
+  const showCountdown = isMine && seat.status === "LOCKED";
 
+  // `remaining` is fully derived from props, so it's computed directly in render rather than
+  // synced into state via an effect. The effect's only job is forcing a re-render once a second
+  // so that derived value ticks down — its setState call happens inside the interval's own
+  // callback, not synchronously in the effect body.
+  const [, forceTick] = useState(0);
   useEffect(() => {
-    if (!isMine || seat.status !== "LOCKED") {
-      setRemaining(null);
-      return;
-    }
-    setRemaining(secondsRemaining(seat.lockExpiresAt));
-    const interval = setInterval(() => setRemaining(secondsRemaining(seat.lockExpiresAt)), 1000);
+    if (!showCountdown) return;
+    const interval = setInterval(() => forceTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
-  }, [isMine, seat.status, seat.lockExpiresAt]);
+  }, [showCountdown]);
+
+  const remaining = showCountdown ? secondsRemaining(seat.lockExpiresAt) : null;
 
   const disabled = isPending || (seat.status !== "AVAILABLE" && !(seat.status === "LOCKED" && isMine));
 
@@ -55,7 +58,7 @@ export function SeatCell({
       )}`}
     >
       {seat.number}
-      {isMine && remaining !== null && (
+      {remaining !== null && (
         <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-amber-700">
           {Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, "0")}
         </span>
