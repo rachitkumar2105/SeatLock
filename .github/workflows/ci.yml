@@ -127,8 +127,21 @@ jobs:
           docker compose logs app
           exit 1
 
-      - name: Check the frontend is serving
-        run: curl -sf -o /dev/null http://localhost:3100
+      - name: Wait for the frontend to become ready
+        # Compose's depends_on/healthy for `app` only gates container start order — nothing waits
+        # for the Next.js server itself to finish binding its port, so a bare curl right after
+        # `up` races it. Poll instead of hoping the previous step's delay was enough.
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://localhost:3100; then
+              echo "frontend is ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "frontend never became ready" >&2
+          docker compose logs frontend
+          exit 1
 
       - name: Register + login smoke test against the live stack
         run: |
