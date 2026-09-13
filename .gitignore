@@ -1,0 +1,6 @@
+# Local dev tooling state (not meaningful to share)
+.claude/scheduled_tasks.lock
+
+# OS
+.DS_Store
+Thumbs.db
