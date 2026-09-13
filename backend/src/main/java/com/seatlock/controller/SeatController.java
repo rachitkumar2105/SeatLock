@@ -3,6 +3,8 @@ package com.seatlock.controller;
 import com.seatlock.dto.SeatBulkCreateRequest;
 import com.seatlock.dto.SeatDto;
 import com.seatlock.entity.Seat;
+import com.seatlock.ratelimit.RateLimitBucket;
+import com.seatlock.ratelimit.RateLimited;
 import com.seatlock.security.CurrentUser;
 import com.seatlock.service.SeatLockService;
 import com.seatlock.service.SeatService;
@@ -40,6 +42,7 @@ public class SeatController {
         return ResponseEntity.status(201).body(seats.stream().map(SeatDto::from).toList());
     }
 
+    @RateLimited(bucket = RateLimitBucket.SEAT_LOCK)
     @PostMapping("/api/seats/{seatId}/lock")
     public SeatDto lock(@PathVariable UUID seatId, Authentication authentication) {
         CurrentUser currentUser = (CurrentUser) authentication.getPrincipal();

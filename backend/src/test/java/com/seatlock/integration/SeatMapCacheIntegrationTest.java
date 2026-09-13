@@ -9,8 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.http.*;
+import org.springframework.test.context.TestPropertySource;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -19,12 +19,15 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 // See AuthFlowIntegrationTest for why this hits the docker-compose Postgres instead of Testcontainers.
+//
+// Caching the seat-map read (GET /api/events/{id}/seats) is exactly the kind of change that could
+// quietly reintroduce a staleness bug — this proves that locking a seat is reflected on the very
+// next read, not delayed until the cache TTL expires. The real invalidation path is the explicit
+// evict in SeatBroadcastPublisher, not the TTL (which is just a backstop).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
-// Many rapid logins/bookings from one test-JVM "IP" across dozens of test methods is expected
-// test traffic, not the abuse pattern the rate limiter exists to catch (verified separately).
 @TestPropertySource(properties = "app.rate-limit.enabled=false")
-class BookingFlowIntegrationTest {
+class SeatMapCacheIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -35,89 +38,33 @@ class BookingFlowIntegrationTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void lockThenBookThenRetryWithSameIdempotencyKeyReturnsSameBooking() throws Exception {
+    void lockingASeatIsVisibleOnTheVeryNextReadDespiteCaching() throws Exception {
         HttpHeaders organizerHeaders = registerOrganizerAndLogin();
         String eventId = createPublishedEvent(organizerHeaders);
         String seatId = createSingleSeat(eventId, organizerHeaders);
 
-        HttpHeaders buyerHeaders = registerUserAndLogin();
+        // Warm the cache.
+        JsonNode before = objectMapper.readTree(
+                restTemplate.getForEntity("/api/events/" + eventId + "/seats", String.class).getBody()
+        );
+        assertThat(before.get(0).get("status").asText()).isEqualTo("AVAILABLE");
 
+        HttpHeaders buyerHeaders = registerUserAndLogin();
         ResponseEntity<String> lockResponse = restTemplate.postForEntity(
                 "/api/seats/" + seatId + "/lock", new HttpEntity<>(null, buyerHeaders), String.class
         );
         assertThat(lockResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        HttpHeaders bookingHeaders = new HttpHeaders(buyerHeaders);
-        bookingHeaders.setContentType(MediaType.APPLICATION_JSON);
-        String idempotencyKey = UUID.randomUUID().toString();
-        bookingHeaders.add("Idempotency-Key", idempotencyKey);
-
-        String bookingBody = """
-                {"eventId":"%s","seatIds":["%s"]}
-                """.formatted(eventId, seatId);
-
-        ResponseEntity<String> firstBookingResponse = restTemplate.postForEntity(
-                "/api/bookings", new HttpEntity<>(bookingBody, bookingHeaders), String.class
+        JsonNode after = objectMapper.readTree(
+                restTemplate.getForEntity("/api/events/" + eventId + "/seats", String.class).getBody()
         );
-        assertThat(firstBookingResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        String bookingId = objectMapper.readTree(firstBookingResponse.getBody()).get("id").asText();
-
-        // Retrying with the same Idempotency-Key must return the original booking, not create a new one
-        // or fail because the seat is no longer LOCKED.
-        ResponseEntity<String> retryResponse = restTemplate.postForEntity(
-                "/api/bookings", new HttpEntity<>(bookingBody, bookingHeaders), String.class
-        );
-        assertThat(retryResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(objectMapper.readTree(retryResponse.getBody()).get("id").asText()).isEqualTo(bookingId);
-    }
-
-    @Test
-    void cannotBookASeatThatIsNotLockedByYou() throws Exception {
-        HttpHeaders organizerHeaders = registerOrganizerAndLogin();
-        String eventId = createPublishedEvent(organizerHeaders);
-        String seatId = createSingleSeat(eventId, organizerHeaders);
-
-        HttpHeaders buyerHeaders = registerUserAndLogin();
-        HttpHeaders bookingHeaders = new HttpHeaders(buyerHeaders);
-        bookingHeaders.setContentType(MediaType.APPLICATION_JSON);
-        bookingHeaders.add("Idempotency-Key", UUID.randomUUID().toString());
-
-        String bookingBody = """
-                {"eventId":"%s","seatIds":["%s"]}
-                """.formatted(eventId, seatId);
-
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                "/api/bookings", new HttpEntity<>(bookingBody, bookingHeaders), String.class
-        );
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-    }
-
-    @Test
-    void releasingALockMakesTheSeatAvailableAgain() throws Exception {
-        HttpHeaders organizerHeaders = registerOrganizerAndLogin();
-        String eventId = createPublishedEvent(organizerHeaders);
-        String seatId = createSingleSeat(eventId, organizerHeaders);
-
-        HttpHeaders buyerHeaders = registerUserAndLogin();
-
-        restTemplate.postForEntity("/api/seats/" + seatId + "/lock", new HttpEntity<>(null, buyerHeaders), String.class);
-
-        ResponseEntity<Void> releaseResponse = restTemplate.postForEntity(
-                "/api/seats/" + seatId + "/release", new HttpEntity<>(null, buyerHeaders), Void.class
-        );
-        assertThat(releaseResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-
-        HttpHeaders otherBuyerHeaders = registerUserAndLogin();
-        ResponseEntity<String> secondLockResponse = restTemplate.postForEntity(
-                "/api/seats/" + seatId + "/lock", new HttpEntity<>(null, otherBuyerHeaders), String.class
-        );
-        assertThat(secondLockResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(after.get(0).get("status").asText()).isEqualTo("LOCKED");
     }
 
     private HttpHeaders registerOrganizerAndLogin() throws Exception {
-        String email = "booking-organizer-" + UUID.randomUUID() + "@example.com";
+        String email = "cache-organizer-" + UUID.randomUUID() + "@example.com";
         String password = "correct-horse-battery";
-        register(email, password, "Booking Organizer");
+        register(email, password, "Cache Organizer");
 
         var user = userRepository.findByEmail(email).orElseThrow();
         user.setRole(Role.ORGANIZER);
@@ -127,9 +74,9 @@ class BookingFlowIntegrationTest {
     }
 
     private HttpHeaders registerUserAndLogin() throws Exception {
-        String email = "buyer-" + UUID.randomUUID() + "@example.com";
+        String email = "cache-buyer-" + UUID.randomUUID() + "@example.com";
         String password = "correct-horse-battery";
-        register(email, password, "Buyer");
+        register(email, password, "Cache Buyer");
         return authHeadersFor(email, password);
     }
 
@@ -164,7 +111,7 @@ class BookingFlowIntegrationTest {
 
         String eventDate = Instant.now().plus(30, ChronoUnit.DAYS).toString();
         String createBody = """
-                {"title":"Booking Flow Concert","description":"d","venueName":"Arena","eventDate":"%s"}
+                {"title":"Cache Test Concert","description":"d","venueName":"Arena","eventDate":"%s"}
                 """.formatted(eventDate);
         ResponseEntity<String> createResponse = restTemplate.postForEntity(
                 "/api/events", new HttpEntity<>(createBody, headers), String.class

@@ -8,6 +8,8 @@ import com.seatlock.entity.User;
 import com.seatlock.exception.ApiException;
 import com.seatlock.security.CookieUtil;
 import com.seatlock.security.TokenHasher;
+import com.seatlock.ratelimit.RateLimitBucket;
+import com.seatlock.ratelimit.RateLimited;
 import com.seatlock.service.AuthService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -35,6 +37,7 @@ public class AuthController {
         return ResponseEntity.status(201).body(UserDto.from(user));
     }
 
+    @RateLimited(bucket = RateLimitBucket.LOGIN)
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request, HttpServletResponse response) {
         AuthService.IssuedTokens tokens = authService.login(request.email(), request.password());

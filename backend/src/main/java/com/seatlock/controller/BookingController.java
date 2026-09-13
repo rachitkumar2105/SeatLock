@@ -4,6 +4,8 @@ import com.seatlock.dto.BookingCreateRequest;
 import com.seatlock.dto.BookingDto;
 import com.seatlock.entity.Booking;
 import com.seatlock.exception.ApiException;
+import com.seatlock.ratelimit.RateLimitBucket;
+import com.seatlock.ratelimit.RateLimited;
 import com.seatlock.security.CurrentUser;
 import com.seatlock.service.BookingService;
 import jakarta.validation.Valid;
@@ -24,6 +26,7 @@ public class BookingController {
         this.bookingService = bookingService;
     }
 
+    @RateLimited(bucket = RateLimitBucket.BOOKING)
     @PostMapping
     public ResponseEntity<BookingDto> create(
             @Valid @RequestBody BookingCreateRequest request,

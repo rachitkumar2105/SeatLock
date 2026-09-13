@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.http.*;
 
 import java.util.List;
@@ -19,6 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 // unauthenticated TCP daemon, which we're deliberately not doing. Revisit before the Phase 2 concurrency test.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
+// Many rapid logins from one test-JVM "IP" across dozens of test methods is expected test
+// traffic, not the abuse pattern the rate limiter exists to catch (verified separately).
+@TestPropertySource(properties = "app.rate-limit.enabled=false")
 class AuthFlowIntegrationTest {
 
     @Autowired

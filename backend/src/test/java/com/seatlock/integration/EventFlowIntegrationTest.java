@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.http.*;
 
 import java.time.Instant;
@@ -20,6 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 // See AuthFlowIntegrationTest for why this hits the docker-compose Postgres instead of Testcontainers.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
+// Many rapid logins from one test-JVM "IP" across dozens of test methods is expected test
+// traffic, not the abuse pattern the rate limiter exists to catch (verified separately).
+@TestPropertySource(properties = "app.rate-limit.enabled=false")
 class EventFlowIntegrationTest {
 
     @Autowired

@@ -15,6 +15,14 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      # Short on purpose: a Redis outage should cost each request a few hundred ms falling
+      # through to Postgres, not multiple seconds blocked waiting on a dead connection.
+      timeout: 300ms
+      connect-timeout: 300ms
 
 server:
   port: ${SERVER_PORT:8090}
@@ -29,12 +37,41 @@ app:
   seat-lock:
     ttl-minutes: 5
     expiry-check-interval-ms: 20000
+  cache:
+    seat-map-ttl-seconds: 30
+  rate-limit:
+    enabled: true
+    login:
+      limit: 10
+      window-seconds: 60
+    seat-lock:
+      limit: 30
+      window-seconds: 60
+    booking:
+      limit: 10
+      window-seconds: 60
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
-      show-details: when-authorized
+      show-details: always
+      group:
+        # Redis is deliberately NOT part of readiness: it's a cache/rate-limit accelerator, not
+        # a correctness dependency (see RedisConfig, RateLimiter). An orchestrator or load
+        # balancer polling readiness should keep routing traffic to this instance during a Redis
+        # outage — the app is genuinely still able to serve requests, just slower. Redis still
+        # shows up as its own component on the plain /actuator/health response for human
+        # debugging; it's just excluded from the group that gates traffic routing.
+        readiness:
+          include: readinessState,db
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    root: INFO

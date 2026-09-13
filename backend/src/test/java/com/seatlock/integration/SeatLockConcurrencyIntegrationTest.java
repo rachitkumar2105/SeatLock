@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.http.*;
 
 import java.time.Instant;
@@ -29,6 +30,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 // concurrent lock requests race for the same seat, and exactly one must win.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
+// 25 rapid logins from one test-JVM "IP" to set up the race is expected test traffic, not the
+// abuse pattern the login rate limiter exists to catch (verified separately). Also avoids the
+// per-user seat-lock limiter interfering with the very race this test is designed to produce.
+@TestPropertySource(properties = "app.rate-limit.enabled=false")
 class SeatLockConcurrencyIntegrationTest {
 
     private static final int CONCURRENT_USERS = 25;

@@ -2,7 +2,7 @@
 
 Real-time seat & ticket booking platform. Built phase-by-phase per `SeatLock_Technical_Blueprint.pdf`.
 
-## Status: Phase 4 complete (Weeks 1-6 of the roadmap)
+## Status: Phase 5 complete (Weeks 1-7 of the roadmap)
 
 **Phase 1**
 - Spring Boot 4 skeleton (Java 21, Maven wrapper)
@@ -50,23 +50,52 @@ Real-time seat & ticket booking platform. Built phase-by-phase per `SeatLock_Tec
 - Mobile-responsive nav (hamburger menu below the `md` breakpoint) and a seat map that stays
   usable at 375px — checked live in the browser at that width, not just by class name
 
+**Phase 5**
+- **Redis seat-map cache**: `GET /api/events/{id}/seats` (the hottest read) is `@Cacheable`, with a
+  30s TTL as a backstop and *explicit* eviction on every seat-status change, fired from the single
+  funnel point already used for broadcasting (`SeatBroadcastPublisher`) — so a lock/release/booking
+  is reflected on the very next read, not delayed until the TTL expires
+- **Redis-backed rate limiting** (fixed-window `INCR`+`EXPIRE`) on login (per IP), seat-lock, and
+  booking (per user), returning `429` with `Retry-After`
+- **Graceful Redis degradation, verified live, not just claimed**: a `CachingConfigurer` error
+  handler makes a cache failure fall through to Postgres instead of throwing; the rate limiter
+  fails open. Manually stopped the Redis container against a running instance and confirmed the
+  seat-map read, login, and lock endpoints all kept returning `200` — slower (≈0.4s vs ≈0.2s with
+  the timeout tightened to 300ms; it was a rough 2s before that fix), not broken
+- **Readiness deliberately excludes Redis**: `management.endpoint.health.group.readiness` includes
+  `db` but not `redis` — Redis is still visible as its own component on the plain
+  `/actuator/health` for human debugging, but a load balancer polling *readiness* keeps routing
+  traffic during a Redis outage instead of wrongly pulling a healthy instance out of rotation
+- Structured JSON logs (`logstash-logback-encoder`) with a per-request correlation ID
+  (`X-Request-ID`, propagated via MDC and echoed back in the response header)
+- Prometheus metrics at `/actuator/prometheus`, including a custom `seatlock.lock.attempts`
+  counter tagged by outcome (`success`/`conflict`) — the metric the blueprint specifically calls
+  out as worth having, verified live by triggering a real lock conflict and reading it back
+- Optional Prometheus + Grafana containers (`docker compose --profile observability up -d`) — not
+  started by default, and no dashboards were built in Grafana; only the scrape target
+  (`observability/prometheus.yml`) is wired up
+
 Integration tests: full auth flow (register → login → refresh → logout, including refresh-token
 rotation and reuse detection), event flow (organizer creates + publishes, a plain user is
 forbidden), booking flow (lock → book → idempotent retry, booking without a lock is rejected,
-release-then-relock by another user), the seat-lock concurrency test above, and the admin/
-dashboard flow (organizer sees own events + stats, a non-owner is forbidden, admin lists users/
-updates roles/moderates events/reads metrics, a plain user is forbidden from admin endpoints).
+release-then-relock by another user), the seat-lock concurrency test above, the admin/dashboard
+flow (organizer sees own events + stats, a non-owner is forbidden, admin lists users/updates
+roles/moderates events/reads metrics, a plain user is forbidden from admin endpoints), the seat-map
+cache (a lock is visible on the very next read despite caching), and the rate limiter (exceeding
+the login limit returns 429 with `Retry-After`).
 
-Not yet built: Redis/rate limiting/observability (Phase 5), CI/deployment (Phase 6).
+Not yet built: CI/deployment (Phase 6).
 
 ## Running locally
 
-1. Start Postgres:
+1. Start Postgres and Redis:
    ```bash
-   docker compose up -d postgres
+   docker compose up -d postgres redis
    ```
-   (Maps to host port **5433**, not 5432 — chosen to avoid clashing with a locally installed
-   Postgres service. See `docker-compose.yml` / `backend/src/main/resources/application.yml`.)
+   (Postgres maps to host port **5433**, Redis to **6380** — both non-default, chosen to avoid
+   clashing with locally installed services. See `docker-compose.yml` /
+   `backend/src/main/resources/application.yml`.) Redis is optional at runtime — the backend
+   starts and serves correctly without it, just without caching or rate limiting.
 
 2. Run the backend (defaults to port **8090**, not 8080 — see "Known environment quirks" below):
    ```bash
@@ -127,3 +156,23 @@ interview-useful than the feature list itself.
   complete. The standard fix (exposing the daemon over unauthenticated TCP) was deliberately not
   applied. All integration tests instead run against the docker-compose Postgres directly. This
   should be revisited before attempting a Testcontainers-based CI pipeline in Phase 6.
+- **Real bug: the Redis cache silently never wrote anything.** `GenericJackson2JsonRedisSerializer`'s
+  no-arg constructor builds its own internal `ObjectMapper` with default typing on but *without*
+  the JSR-310 module, so every cache write of a `Seat` (which has an `Instant` field) threw and was
+  swallowed by the graceful-degradation error handler — meaning every request looked fine but the
+  cache was doing nothing at all. `docker exec ... redis-cli KEYS` showed zero keys despite heavy
+  traffic; the write failure only showed up in the JSON logs as a WARN once someone looked. Fixed
+  by building a custom `ObjectMapper` (JavaTimeModule registered, default typing activated to
+  match what the no-arg constructor does) and passing it explicitly. A dedicated test
+  (`SeatMapCacheIntegrationTest`) now asserts a lock is visible on the very next read, and a manual
+  `redis-cli KEYS` check confirmed real entries after the fix.
+- **Real bug: Redis health status was dragging down overall `/actuator/health`, including the
+  readiness group** — which would make a load balancer or orchestrator pull a perfectly healthy
+  instance out of rotation the moment Redis (not a correctness dependency) had a blip. Confirmed
+  live: `readinessState` flipped to `DOWN` the moment the Redis container was stopped. Fixed by
+  excluding `redis` from `management.endpoint.health.group.readiness` — it still shows up on the
+  plain `/actuator/health` response for human debugging, just doesn't gate traffic routing.
+- **The Redis command/connect timeout was originally 2s**, meaning every request that touched the
+  cache or rate limiter during a real Redis outage blocked for up to 2 full seconds before falling
+  through — technically "not broken" but not honestly "slower" either. Tightened to 300ms; a live
+  re-test after the fix showed request latency during an outage drop from ~2.1s to ~0.4s.

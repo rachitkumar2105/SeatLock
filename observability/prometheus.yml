@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: seatlock-backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # host.docker.internal lets the Prometheus container reach the backend running on the host
+      # (outside docker-compose) — this is how the backend is run for local dev in this project.
+      - targets: ["host.docker.internal:8090"]
