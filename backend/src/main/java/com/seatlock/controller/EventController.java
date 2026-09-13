@@ -2,6 +2,7 @@ package com.seatlock.controller;
 
 import com.seatlock.dto.EventCreateRequest;
 import com.seatlock.dto.EventDto;
+import com.seatlock.dto.EventStatsDto;
 import com.seatlock.dto.EventUpdateRequest;
 import com.seatlock.entity.Event;
 import com.seatlock.security.CurrentUser;
@@ -35,6 +36,19 @@ public class EventController {
     @GetMapping("/{id}")
     public EventDto get(@PathVariable UUID id) {
         return EventDto.from(eventService.getById(id));
+    }
+
+    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @GetMapping("/mine")
+    public Page<EventDto> listMine(@PageableDefault(size = 20) Pageable pageable, Authentication authentication) {
+        CurrentUser currentUser = (CurrentUser) authentication.getPrincipal();
+        return eventService.listByOrganizer(currentUser.id(), pageable).map(EventDto::from);
+    }
+
+    @PreAuthorize("hasRole('ADMIN') or @eventGuard.isOwner(#id, authentication)")
+    @GetMapping("/{id}/stats")
+    public EventStatsDto stats(@PathVariable UUID id) {
+        return eventService.getStats(id);
     }
 
     @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")

@@ -8,6 +8,7 @@ import { useSeatWebSocket } from "@/hooks/useWebSocket";
 import { useAuth } from "@/hooks/useAuth";
 import { SeatMap } from "@/components/SeatMap";
 import { Toasts, Toast } from "@/components/Toasts";
+import { Skeleton, SeatMapSkeleton } from "@/components/Skeleton";
 import { ApiError } from "@/services/apiClient";
 
 export default function SeatSelectionPage({ params }: PageProps<"/events/[id]/seats">) {
@@ -93,7 +94,17 @@ export default function SeatSelectionPage({ params }: PageProps<"/events/[id]/se
   const total = mySeats.reduce((sum, s) => sum + Number(s.price), 0);
 
   if (error && seats.length === 0) return <p className="text-red-600">{error}</p>;
-  if (!event) return <p className="text-slate-500">Loading seat map...</p>;
+  if (!event) {
+    return (
+      <div>
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="mt-2 h-5 w-40" />
+        <div className="mt-6">
+          <SeatMapSkeleton />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

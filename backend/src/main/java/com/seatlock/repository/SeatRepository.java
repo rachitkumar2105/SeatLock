@@ -17,6 +17,10 @@ public interface SeatRepository extends JpaRepository<Seat, UUID> {
 
     List<Seat> findByStatusAndLockExpiresAtBefore(SeatStatus status, Instant instant);
 
+    long countByEventId(UUID eventId);
+
+    long countByEventIdAndStatus(UUID eventId, SeatStatus status);
+
     /**
      * The core correctness guarantee: a single atomic conditional UPDATE. Postgres serializes
      * concurrent writes to the same row, so of N concurrent calls racing for the same seat, exactly

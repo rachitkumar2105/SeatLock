@@ -2,7 +2,7 @@
 
 Real-time seat & ticket booking platform. Built phase-by-phase per `SeatLock_Technical_Blueprint.pdf`.
 
-## Status: Phase 3 complete (Weeks 1-5 of the roadmap)
+## Status: Phase 4 complete (Weeks 1-6 of the roadmap)
 
 **Phase 1**
 - Spring Boot 4 skeleton (Java 21, Maven wrapper)
@@ -38,13 +38,26 @@ Real-time seat & ticket booking platform. Built phase-by-phase per `SeatLock_Tec
   tab updates the other tab's seat map instantly with no refresh, including the per-seat lock
   countdown timer — the Phase 3 "done" criterion from the roadmap
 
+**Phase 4**
+- **Organizer Dashboard** (`/dashboard`): every event the organizer owns (any status, not just
+  published), with per-event occupancy/revenue stats (`GET /api/events/{id}/stats`) and a
+  one-click publish action for drafts
+- **Admin Dashboard** (`/admin`): platform-wide metrics, a user list with inline role
+  management (`PATCH /api/admin/users/{id}/role`), and event moderation
+  (`POST /api/admin/events/{id}/cancel`) — all gated server-side with `@PreAuthorize`, not just
+  hidden client-side
+- Skeleton loaders on the events list and seat map instead of blank/plain-text loading states
+- Mobile-responsive nav (hamburger menu below the `md` breakpoint) and a seat map that stays
+  usable at 375px — checked live in the browser at that width, not just by class name
+
 Integration tests: full auth flow (register → login → refresh → logout, including refresh-token
 rotation and reuse detection), event flow (organizer creates + publishes, a plain user is
 forbidden), booking flow (lock → book → idempotent retry, booking without a lock is rejected,
-release-then-relock by another user), and the seat-lock concurrency test above.
+release-then-relock by another user), the seat-lock concurrency test above, and the admin/
+dashboard flow (organizer sees own events + stats, a non-owner is forbidden, admin lists users/
+updates roles/moderates events/reads metrics, a plain user is forbidden from admin endpoints).
 
-Not yet built: dashboards (Phase 4), Redis/rate limiting/observability (Phase 5),
-CI/deployment (Phase 6).
+Not yet built: Redis/rate limiting/observability (Phase 5), CI/deployment (Phase 6).
 
 ## Running locally
 

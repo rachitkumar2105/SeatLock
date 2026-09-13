@@ -12,7 +12,16 @@ export interface EventDto {
   status: EventStatus;
 }
 
-interface Page<T> {
+export interface EventStatsDto {
+  eventId: string;
+  totalSeats: number;
+  availableSeats: number;
+  lockedSeats: number;
+  bookedSeats: number;
+  revenue: number;
+}
+
+export interface Page<T> {
   content: T[];
   totalElements: number;
   totalPages: number;
@@ -22,8 +31,16 @@ export function listEvents(): Promise<Page<EventDto>> {
   return apiFetch<Page<EventDto>>("/api/events");
 }
 
+export function listMyEvents(): Promise<Page<EventDto>> {
+  return apiFetch<Page<EventDto>>("/api/events/mine");
+}
+
 export function getEvent(id: string): Promise<EventDto> {
   return apiFetch<EventDto>(`/api/events/${id}`);
+}
+
+export function getEventStats(id: string): Promise<EventStatsDto> {
+  return apiFetch<EventStatsDto>(`/api/events/${id}/stats`);
 }
 
 export function createEvent(input: {

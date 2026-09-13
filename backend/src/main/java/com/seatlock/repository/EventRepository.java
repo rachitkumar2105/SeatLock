@@ -10,4 +10,8 @@ import java.util.UUID;
 
 public interface EventRepository extends JpaRepository<Event, UUID> {
     Page<Event> findByStatus(EventStatus status, Pageable pageable);
+
+    Page<Event> findByOrganizerId(UUID organizerId, Pageable pageable);
+
+    long countByStatus(EventStatus status);
 }
