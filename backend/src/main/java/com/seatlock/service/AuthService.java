@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -52,7 +54,7 @@ public class AuthService {
         return userRepository.save(user);
     }
 
-    public IssuedTokens login(String email, String rawPassword) {
+    public IssuedTokens login(String email, String rawPassword, String userAgent, String ipAddress) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> ApiException.unauthorized("Invalid credentials"));
 
@@ -60,11 +62,11 @@ public class AuthService {
             throw ApiException.unauthorized("Invalid credentials");
         }
 
-        return issueTokens(user);
+        return issueTokens(user, userAgent, ipAddress);
     }
 
     @Transactional
-    public IssuedTokens refresh(String rawRefreshToken) {
+    public IssuedTokens refresh(String rawRefreshToken, String userAgent, String ipAddress) {
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
             throw ApiException.unauthorized("Missing refresh token");
         }
@@ -89,7 +91,19 @@ public class AuthService {
         User user = userRepository.findById(stored.getUserId())
                 .orElseThrow(() -> ApiException.unauthorized("User no longer exists"));
 
-        return issueTokens(user);
+        return issueTokens(user, userAgent, ipAddress);
+    }
+
+    public List<RefreshToken> listSessions(UUID userId) {
+        return refreshTokenRepository.findActiveSessions(userId, Instant.now());
+    }
+
+    @Transactional
+    public void revokeSession(UUID userId, UUID sessionId) {
+        int updated = refreshTokenRepository.revokeOne(sessionId, userId);
+        if (updated == 0) {
+            throw ApiException.notFound("Session not found");
+        }
     }
 
     @Transactional
@@ -104,7 +118,7 @@ public class AuthService {
         });
     }
 
-    private IssuedTokens issueTokens(User user) {
+    private IssuedTokens issueTokens(User user, String userAgent, String ipAddress) {
         String accessToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRole().name());
 
         String rawRefreshToken = TokenHasher.generateOpaqueToken();
@@ -113,9 +127,17 @@ public class AuthService {
         refreshToken.setTokenHash(TokenHasher.sha256Hex(rawRefreshToken));
         refreshToken.setExpiresAt(Instant.now().plus(refreshTokenTtlDays, ChronoUnit.DAYS));
         refreshToken.setRevoked(false);
+        refreshToken.setUserAgent(trimTo(userAgent, 500));
+        refreshToken.setIpAddress(trimTo(ipAddress, 64));
+        refreshToken.setLastUsedAt(Instant.now());
         refreshTokenRepository.save(refreshToken);
 
         return new IssuedTokens(user, accessToken, jwtService.getAccessTokenTtlMinutes() * 60, rawRefreshToken);
+    }
+
+    private static String trimTo(String value, int maxLength) {
+        if (value == null) return null;
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     public record IssuedTokens(User user, String accessToken, long expiresInSeconds, String rawRefreshToken) {

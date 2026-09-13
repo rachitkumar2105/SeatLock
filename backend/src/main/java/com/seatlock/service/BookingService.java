@@ -8,6 +8,7 @@ import com.seatlock.repository.PaymentRepository;
 import com.seatlock.repository.SeatRepository;
 import com.seatlock.websocket.SeatBroadcastPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -37,7 +38,12 @@ public class BookingService {
         this.broadcastPublisher = broadcastPublisher;
     }
 
-    @Transactional
+    // REPEATABLE_READ (not the READ COMMITTED default used elsewhere): this transaction reads each
+    // seat's status, then re-verifies and writes it via confirmBooked's conditional UPDATE. Postgres's
+    // READ COMMITTED would let a concurrent transaction change a row between our read and our write;
+    // REPEATABLE READ pins the snapshot for the whole transaction, so a conflicting concurrent booking
+    // fails with a serialization error instead of silently interleaving. See docs/adr/0003.
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public Booking createBooking(UUID userId, UUID eventId, List<UUID> seatIds, String idempotencyKey) {
         var existing = bookingRepository.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {

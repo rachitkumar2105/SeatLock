@@ -1,8 +1,9 @@
 # SeatLock
 
-Real-time seat & ticket booking platform. Built phase-by-phase per `SeatLock_Technical_Blueprint.pdf`.
+Real-time seat & ticket booking platform. Built phase-by-phase per `SeatLock_Technical_Blueprint.pdf`,
+with a subsequent security/hardening pass per its companion addendum (`SeatLock_next.pdf`).
 
-## Status: Phase 6 complete (Weeks 1-8 of the roadmap) — MVP through Tier 2 done
+## Status: Phase 6 complete (Weeks 1-8 of the roadmap) — MVP through Tier 2 done, plus a security & hardening pass
 
 [![CI](https://github.com/rachitkumar2105/SeatLock/actions/workflows/ci.yml/badge.svg)](https://github.com/rachitkumar2105/SeatLock/actions/workflows/ci.yml)
 
@@ -115,6 +116,84 @@ flow (organizer sees own events + stats, a non-owner is forbidden, admin lists u
 roles/moderates events/reads metrics, a plain user is forbidden from admin endpoints), the seat-map
 cache (a lock is visible on the very next read despite caching), and the rate limiter (exceeding
 the login limit returns 429 with `Retry-After`).
+
+**Security & Hardening pass** (`SeatLock_Technical_Blueprint` companion addendum — explicitly a
+hardening pass over the working MVP, not new features; its own Section 9 says a small number of
+items done well beats all of them done shallowly, so this pass covers exactly its priority-ordered
+top 5, done for real, rather than attempting the whole document shallowly)
+
+1. **Transaction isolation level, chosen and justified, plus real load-test numbers** —
+   `BookingService.createBooking` runs at `REPEATABLE_READ` (everything else stays at Postgres's
+   default `READ COMMITTED`); see `docs/adr/0003-repeatable-read-for-booking-confirmation.md` for
+   why, and "Load testing" below for the actual numbers.
+2. **Active-sessions / device-revoke page** (`/settings/sessions`) — `refresh_tokens` gained
+   `user_agent`, `ip_address`, and `last_used_at` columns (Flyway `V3`); `GET /api/auth/sessions`
+   lists a user's active sessions, `DELETE /api/auth/sessions/{id}` revokes one. Verified live:
+   registered, logged in, saw the real device/IP/timestamps on the page, revoked the session, and
+   confirmed it disappeared from the list.
+3. **Security headers + JWT algorithm pinning** — `Content-Security-Policy`,
+   `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Strict-Transport-Security`,
+   `Referrer-Policy`, and `Permissions-Policy` are now set explicitly in `SecurityConfig` (verified
+   live via `curl -I`); `JwtService` pins `HS256` explicitly on signing rather than letting it be
+   inferred from key length, and verification never trusts the token's own `alg` header (it always
+   verifies with our own known key, which is what actually closes the "alg: none" forgery class).
+4. **OpenAPI docs + ADRs** — `springdoc-openapi-starter-webmvc-ui` added; live at
+   `/v3/api-docs` and `/swagger-ui/index.html` (checked it actually renders under the new CSP, not
+   just that the JAR is on the classpath). Three ADRs added under `docs/adr/`: optimistic locking
+   for seat state, the JWT/cookie split, and the `REPEATABLE_READ` choice above.
+5. **Accessibility basics on the seat map** — each seat button now has a real `aria-label`
+   (`"Seat A11, $50, held by you"`, etc.), a minimum 44×44px touch target, and a status glyph
+   (✓ / ⏱ / ×) alongside its color so status is never color-only; section/row groups carry
+   `aria-label`s for screen readers; the live-update toasts are an `aria-live="polite"` region.
+   Keyboard navigation was already free from using real `<button>` elements (Tab + Enter/Space)
+   rather than clickable `<div>`s.
+
+**What this pass explicitly does *not* include**, per its own "depth over breadth" instruction —
+these are real, named gaps, not implied-but-skipped:
+account lockout on repeated failed logins, an audit-log table for admin actions, `__Host-`-prefixed
+cookies, "remember me" / variable session-duration policy, API versioning (`/api/v1/...`),
+Checkstyle/Spotless in CI, cursor-based pagination, `EXPLAIN ANALYZE` on hot queries, ETag/
+Cache-Control on read-heavy endpoints, graceful shutdown, and Dependabot. None of these are claimed
+as done anywhere in this README or in the codebase.
+
+### Load testing
+
+`scripts/k6/seat-lock-load-test.js` ramps concurrent virtual users (0 → 20 → 39 → 0 over 40s), each
+repeatedly attempting to lock a randomly-chosen seat from a pool of 50 seats on one published
+event, using one pre-issued access token per virtual user so the load test itself never touches the
+login rate limiter. Reproduction:
+
+```bash
+# 1. Create a published event with N seats via the API (organizer role required), collect its
+#    seat IDs into seat_ids.json (a JSON array of seat UUIDs).
+# 2. Register + log in one user per intended VU, collect their access tokens into tokens.json
+#    (a JSON array of strings) — pace logins to stay under the login rate limit (10/60s per IP).
+# 3. Run the test itself (grafana/k6, via Docker, against the local docker-compose stack):
+docker run --rm -i --add-host=host.docker.internal:host-gateway \
+  -e BASE_URL=http://host.docker.internal:8090 \
+  -e SEAT_IDS_FILE=/seat_ids.json -e TOKENS_FILE=/tokens.json \
+  -v "$(pwd)/seat_ids.json:/seat_ids.json" \
+  -v "$(pwd)/tokens.json:/tokens.json" \
+  -v "$(pwd)/scripts/k6/seat-lock-load-test.js:/script.js" \
+  grafana/k6 run /script.js
+```
+
+Actual result from a run against this repo's docker-compose stack (39 VUs, 50 seats, 40s):
+
+| Metric | Result |
+|---|---|
+| Total lock attempts | 366 |
+| Successful locks | 50 |
+| Conflicts (`409`) | 316 |
+| Unexpected errors | 0 |
+| Requests/sec | ~8.75 |
+| Latency: avg / p90 / p95 / max | 26.88ms / 41ms / 44.96ms / 94.95ms |
+
+Verified against the database directly afterward: exactly 50 seats in `LOCKED` status, one per
+seat, confirming zero double-bookings across 316 concurrent conflicting attempts. HikariCP's
+default pool size (10) was left as-is — this load level didn't come close to saturating it, so
+there was nothing to tune against yet; a real tuning pass would need a higher-concurrency run than
+this project's own rate limits comfortably allow.
 
 ## Running locally
 
@@ -232,3 +311,10 @@ interview-useful than the feature list itself.
   cache or rate limiter during a real Redis outage blocked for up to 2 full seconds before falling
   through — technically "not broken" but not honestly "slower" either. Tightened to 300ms; a live
   re-test after the fix showed request latency during an outage drop from ~2.1s to ~0.4s.
+- **Security & Hardening pass: no new application bugs surfaced.** Unlike every prior phase, every
+  addition here (isolation level + exception mapping, session columns/endpoints, security headers,
+  OpenAPI, accessibility markup) worked on first real verification against the live docker-compose
+  stack — worth stating plainly rather than silently, since the whole point of this list is to be
+  honest about what *did* go wrong, and here nothing did. The closest thing to a mistake was in the
+  load-test *setup* itself, not the app: the seat bulk-create request needs `{"seats": [...]}`, not
+  a bare array — caught immediately by the API's own 201 vs 400 response, not a real defect.

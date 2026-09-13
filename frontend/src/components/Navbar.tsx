@@ -29,6 +29,11 @@ export function Navbar() {
           My Bookings
         </Link>
       )}
+      {isAuthenticated && (
+        <Link href="/settings/sessions" onClick={() => setMenuOpen(false)} className="text-slate-600 hover:text-slate-900">
+          Sessions
+        </Link>
+      )}
       {isOrganizer && (
         <Link href="/dashboard" onClick={() => setMenuOpen(false)} className="text-slate-600 hover:text-slate-900">
           Dashboard

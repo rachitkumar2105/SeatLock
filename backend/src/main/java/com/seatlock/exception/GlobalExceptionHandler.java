@@ -3,6 +3,7 @@ package com.seatlock.exception;
 import com.seatlock.dto.ErrorResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -32,6 +33,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         return build(HttpStatus.FORBIDDEN, "Access denied", List.of());
+    }
+
+    // Thrown by the REPEATABLE_READ booking-confirmation transaction (see BookingService.createBooking
+    // and docs/adr/0003) when Postgres detects two transactions racing on the same seat row and aborts
+    // one with a serialization failure. This is the concurrency mechanism working as intended, not a
+    // server error — surface it the same way an ordinary lock conflict is surfaced, so the client's
+    // existing 409 retry handling covers it too.
+    @ExceptionHandler(ConcurrencyFailureException.class)
+    public ResponseEntity<ErrorResponse> handleConcurrencyFailure(ConcurrencyFailureException ex) {
+        return build(HttpStatus.CONFLICT, "This seat was just claimed by someone else. Please try again.", List.of());
     }
 
     @Override

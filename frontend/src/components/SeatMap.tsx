@@ -25,12 +25,12 @@ export function SeatMap({
   return (
     <div className="space-y-8">
       {Array.from(sections.entries()).map(([section, rows]) => (
-        <div key={section}>
+        <div key={section} role="group" aria-label={`Section ${section}`}>
           <h3 className="mb-2 text-sm font-semibold text-slate-700">Section {section}</h3>
           <div className="space-y-2">
             {Array.from(rows.entries()).map(([row, rowSeats]) => (
-              <div key={row} className="flex items-center gap-2">
-                <span className="w-5 text-xs font-medium text-slate-400">{row}</span>
+              <div key={row} role="group" aria-label={`Row ${row}`} className="flex items-center gap-2">
+                <span aria-hidden="true" className="w-5 text-xs font-medium text-slate-400">{row}</span>
                 <div className="flex flex-wrap gap-2 pb-3">
                   {rowSeats
                     .sort((a, b) => a.number - b.number)

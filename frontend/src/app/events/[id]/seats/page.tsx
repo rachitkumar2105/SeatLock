@@ -110,18 +110,20 @@ export default function SeatSelectionPage({ params }: PageProps<"/events/[id]/se
       <h1 className="text-2xl font-semibold text-slate-900">{event.title}</h1>
       <p className="mb-6 text-slate-600">{event.venueName}</p>
 
+      {/* Each legend entry pairs its color with a glyph and text label — color is never the only
+          signal, so this reads the same for colorblind users as the seat map itself does. */}
       <div className="mb-4 flex flex-wrap gap-4 text-xs text-slate-600">
         <span className="flex items-center gap-1">
-          <span className="h-3 w-3 rounded bg-emerald-100" /> Available
+          <span aria-hidden="true" className="h-3 w-3 rounded bg-emerald-100" /> Available
         </span>
         <span className="flex items-center gap-1">
-          <span className="h-3 w-3 rounded bg-amber-400" /> Selected by you
+          <span aria-hidden="true" className="h-3 w-3 rounded bg-amber-400 text-center text-[8px] leading-3">✓</span> Selected by you
         </span>
         <span className="flex items-center gap-1">
-          <span className="h-3 w-3 rounded bg-amber-100" /> Held by someone else
+          <span aria-hidden="true" className="h-3 w-3 rounded bg-amber-100 text-center text-[8px] leading-3">⏱</span> Held by someone else
         </span>
         <span className="flex items-center gap-1">
-          <span className="h-3 w-3 rounded bg-slate-300" /> Booked
+          <span aria-hidden="true" className="h-3 w-3 rounded bg-slate-300 text-center text-[8px] leading-3">×</span> Booked
         </span>
       </div>
 

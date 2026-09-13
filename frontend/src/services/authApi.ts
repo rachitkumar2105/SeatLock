@@ -29,3 +29,20 @@ export function logout(csrfToken: string | null): Promise<void> {
     skipAuthRetry: true,
   });
 }
+
+export interface SessionDto {
+  id: string;
+  userAgent: string | null;
+  ipAddress: string | null;
+  lastUsedAt: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export function listSessions(): Promise<SessionDto[]> {
+  return apiFetch<SessionDto[]>("/api/auth/sessions");
+}
+
+export function revokeSession(id: string): Promise<void> {
+  return apiFetch<void>(`/api/auth/sessions/${id}`, { method: "DELETE" });
+}

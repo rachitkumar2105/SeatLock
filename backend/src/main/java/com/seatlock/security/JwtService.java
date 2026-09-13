@@ -40,12 +40,20 @@ public class JwtService {
                 .claim("role", role)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTokenTtlMinutes, ChronoUnit.MINUTES)))
-                .signWith(signingKey)
+                // Pin HS256 explicitly rather than letting jjwt infer an algorithm from key length.
+                // parseClaims below never reads the token's own `alg` header to decide how to verify
+                // it (verifyWith(key) is unconditional), which is what actually closes the classic
+                // "alg: none" / algorithm-confusion forgery class — pinning here just keeps the
+                // signer and verifier in obvious, explicit agreement rather than implicit.
+                .signWith(signingKey, Jwts.SIG.HS256)
                 .compact();
     }
 
     public Optional<Claims> parseClaims(String token) {
         try {
+            // verifyWith(signingKey) forces signature verification with our own known key — the
+            // token's self-declared `alg` header is never trusted to pick the verification method,
+            // so a forged "alg: none" or algorithm-substituted token fails here regardless.
             Claims claims = Jwts.parser()
                     .verifyWith(signingKey)
                     .build()
