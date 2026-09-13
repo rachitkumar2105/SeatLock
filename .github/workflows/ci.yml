@@ -47,6 +47,12 @@ jobs:
           cache: maven
           cache-dependency-path: backend/pom.xml
 
+      - name: Ensure mvnw is executable
+        # Belt-and-suspenders: mvnw is committed with the executable bit set, but Windows git
+        # clients don't reliably track/preserve that bit, so a future commit from Windows could
+        # silently strip it again and break `./mvnw` on Linux runners with "Permission denied".
+        run: chmod +x backend/mvnw
+
       - name: Run backend tests
         working-directory: backend
         env:
