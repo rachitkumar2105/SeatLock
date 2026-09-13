@@ -5,7 +5,7 @@ import com.seatlock.entity.BookingStatus;
 import com.seatlock.entity.EventStatus;
 import com.seatlock.entity.Role;
 import com.seatlock.entity.User;
-import com.seatlock.exception.ApiException;
+import com.seatlock.exception.ResourceNotFoundException;
 import com.seatlock.repository.BookingRepository;
 import com.seatlock.repository.EventRepository;
 import com.seatlock.repository.UserRepository;
@@ -36,7 +36,7 @@ public class AdminService {
     @Transactional
     public User updateUserRole(UUID userId, Role role) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> ApiException.notFound("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setRole(role);
         return userRepository.save(user);
     }

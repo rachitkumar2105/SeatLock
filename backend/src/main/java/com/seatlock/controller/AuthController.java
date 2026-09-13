@@ -7,7 +7,7 @@ import com.seatlock.dto.SessionDto;
 import com.seatlock.dto.UserDto;
 import com.seatlock.entity.RefreshToken;
 import com.seatlock.entity.User;
-import com.seatlock.exception.ApiException;
+import com.seatlock.exception.UnauthorizedActionException;
 import com.seatlock.security.CookieUtil;
 import com.seatlock.security.CurrentUser;
 import com.seatlock.security.TokenHasher;
@@ -114,7 +114,7 @@ public class AuthController {
 
     private void verifyCsrf(String csrfCookie, String csrfHeader) {
         if (csrfCookie == null || csrfHeader == null || !csrfCookie.equals(csrfHeader)) {
-            throw ApiException.forbidden("CSRF token missing or invalid");
+            throw new UnauthorizedActionException("CSRF token missing or invalid");
         }
     }
 

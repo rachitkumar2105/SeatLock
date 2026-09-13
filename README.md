@@ -139,14 +139,27 @@ top 5, done for real, rather than attempting the whole document shallowly)
    verifies with our own known key, which is what actually closes the "alg: none" forgery class).
 4. **OpenAPI docs + ADRs** — `springdoc-openapi-starter-webmvc-ui` added; live at
    `/v3/api-docs` and `/swagger-ui/index.html` (checked it actually renders under the new CSP, not
-   just that the JAR is on the classpath). Three ADRs added under `docs/adr/`: optimistic locking
-   for seat state, the JWT/cookie split, and the `REPEATABLE_READ` choice above.
+   just that the JAR is on the classpath). Four ADRs added under `docs/adr/`: optimistic locking
+   for seat state, the JWT/cookie split, the `REPEATABLE_READ` choice above, and the exception
+   hierarchy below.
 5. **Accessibility basics on the seat map** — each seat button now has a real `aria-label`
    (`"Seat A11, $50, held by you"`, etc.), a minimum 44×44px touch target, and a status glyph
    (✓ / ⏱ / ×) alongside its color so status is never color-only; section/row groups carry
    `aria-label`s for screen readers; the live-update toasts are an `aria-live="polite"` region.
    Keyboard navigation was already free from using real `<button>` elements (Tab + Enter/Space)
    rather than clickable `<div>`s.
+
+**Exception hierarchy** (`SeatLock_OOP_OS_DBMS_Mapping.pdf` companion — an interview/viva prep doc
+mapping OOP/OS/DBMS concepts to real code) — `ApiException` was a single concrete class with static
+factory methods (`.notFound()`, `.conflict()`, etc.); it's now an abstract base with five concrete
+subtypes (`BadRequestException`, `AuthenticationFailedException`, `UnauthorizedActionException`,
+`ResourceNotFoundException`, and `ConflictException` — with `SeatConflictException` as `ConflictException`'s
+own narrower subtype for the seat-lock/booking conflicts specifically), each fixing its own
+`HttpStatus`. `GlobalExceptionHandler` needed no changes — its one `@ExceptionHandler(ApiException.class)`
+method already dispatches polymorphically on whichever subtype is actually thrown. See
+`docs/adr/0004-exception-hierarchy-for-api-errors.md`. Verified live against the rebuilt container
+that every status code is unchanged: `404`, `409`, `401`, `400`, and `403` all still come back
+correctly for the same request shapes as before the refactor.
 
 **What this pass explicitly does *not* include**, per its own "depth over breadth" instruction —
 these are real, named gaps, not implied-but-skipped:
@@ -318,3 +331,11 @@ interview-useful than the feature list itself.
   honest about what *did* go wrong, and here nothing did. The closest thing to a mistake was in the
   load-test *setup* itself, not the app: the seat bulk-create request needs `{"seats": [...]}`, not
   a bare array — caught immediately by the API's own 201 vs 400 response, not a real defect.
+- **Real gap: the interview-prep doc's OOP example didn't match the actual code.**
+  `SeatLock_OOP_OS_DBMS_Mapping.pdf` describes `ApiException` extended by named subclasses
+  (`SeatConflictException`, `ResourceNotFoundException`, `UnauthorizedActionException`) as the
+  project's inheritance/polymorphism example — but at the time that doc was written, `ApiException`
+  was a single concrete class with static factory methods, no subclasses at all. Caught by actually
+  reading `ApiException.java` against the doc's claim rather than assuming a prep document is
+  automatically in sync with the code it describes. Fixed by building the real hierarchy (see
+  `docs/adr/0004`), not by editing the doc — the doc was describing a target, and it's now true.

@@ -1,7 +1,11 @@
 package com.seatlock.service;
 
 import com.seatlock.entity.*;
-import com.seatlock.exception.ApiException;
+import com.seatlock.exception.BadRequestException;
+import com.seatlock.exception.ResourceNotFoundException;
+import com.seatlock.exception.SeatConflictException;
+import com.seatlock.exception.UnauthorizedActionException;
+import com.seatlock.exception.ConflictException;
 import com.seatlock.repository.BookingRepository;
 import com.seatlock.repository.BookingSeatRepository;
 import com.seatlock.repository.PaymentRepository;
@@ -52,17 +56,17 @@ public class BookingService {
 
         List<Seat> seats = seatRepository.findAllById(seatIds);
         if (seats.size() != seatIds.size()) {
-            throw ApiException.notFound("One or more seats do not exist");
+            throw new ResourceNotFoundException("One or more seats do not exist");
         }
         boolean allBelongToEvent = seats.stream().allMatch(s -> s.getEventId().equals(eventId));
         if (!allBelongToEvent) {
-            throw ApiException.badRequest("All seats must belong to the requested event");
+            throw new BadRequestException("All seats must belong to the requested event");
         }
 
         for (UUID seatId : seatIds) {
             int updated = seatRepository.confirmBooked(seatId, userId);
             if (updated == 0) {
-                throw ApiException.conflict("Seat " + seatId + " is no longer locked by you");
+                throw new SeatConflictException("Seat " + seatId + " is no longer locked by you");
             }
             Seat bookedSeat = seatRepository.findById(seatId).orElseThrow();
             broadcastPublisher.publishAfterCommit(eventId, bookedSeat);
@@ -105,17 +109,18 @@ public class BookingService {
     }
 
     public Booking getById(UUID id) {
-        return bookingRepository.findById(id).orElseThrow(() -> ApiException.notFound("Booking not found"));
+        return bookingRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
     }
 
     @Transactional
     public Booking cancel(UUID bookingId, UUID userId) {
         Booking booking = getById(bookingId);
         if (!booking.getUserId().equals(userId)) {
-            throw ApiException.forbidden("You can only cancel your own bookings");
+            throw new UnauthorizedActionException("You can only cancel your own bookings");
         }
         if (booking.getStatus() != BookingStatus.CONFIRMED) {
-            throw ApiException.conflict("Only a CONFIRMED booking can be cancelled");
+            throw new ConflictException("Only a CONFIRMED booking can be cancelled");
         }
 
         for (UUID seatId : seatIdsFor(bookingId)) {

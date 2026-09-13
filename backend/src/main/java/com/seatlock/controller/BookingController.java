@@ -3,7 +3,7 @@ package com.seatlock.controller;
 import com.seatlock.dto.BookingCreateRequest;
 import com.seatlock.dto.BookingDto;
 import com.seatlock.entity.Booking;
-import com.seatlock.exception.ApiException;
+import com.seatlock.exception.BadRequestException;
 import com.seatlock.ratelimit.RateLimitBucket;
 import com.seatlock.ratelimit.RateLimited;
 import com.seatlock.security.CurrentUser;
@@ -34,7 +34,7 @@ public class BookingController {
             Authentication authentication
     ) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw ApiException.badRequest("Idempotency-Key header is required");
+            throw new BadRequestException("Idempotency-Key header is required");
         }
         CurrentUser currentUser = (CurrentUser) authentication.getPrincipal();
         Booking booking = bookingService.createBooking(

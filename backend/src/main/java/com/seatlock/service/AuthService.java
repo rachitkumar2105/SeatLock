@@ -3,7 +3,9 @@ package com.seatlock.service;
 import com.seatlock.entity.RefreshToken;
 import com.seatlock.entity.Role;
 import com.seatlock.entity.User;
-import com.seatlock.exception.ApiException;
+import com.seatlock.exception.AuthenticationFailedException;
+import com.seatlock.exception.ConflictException;
+import com.seatlock.exception.ResourceNotFoundException;
 import com.seatlock.repository.RefreshTokenRepository;
 import com.seatlock.repository.UserRepository;
 import com.seatlock.security.JwtService;
@@ -44,7 +46,7 @@ public class AuthService {
     @Transactional
     public User register(String name, String email, String rawPassword) {
         if (userRepository.existsByEmail(email)) {
-            throw ApiException.conflict("An account with this email already exists");
+            throw new ConflictException("An account with this email already exists");
         }
         User user = new User();
         user.setName(name);
@@ -56,10 +58,10 @@ public class AuthService {
 
     public IssuedTokens login(String email, String rawPassword, String userAgent, String ipAddress) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> ApiException.unauthorized("Invalid credentials"));
+                .orElseThrow(() -> new AuthenticationFailedException("Invalid credentials"));
 
         if (!passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
-            throw ApiException.unauthorized("Invalid credentials");
+            throw new AuthenticationFailedException("Invalid credentials");
         }
 
         return issueTokens(user, userAgent, ipAddress);
@@ -68,28 +70,28 @@ public class AuthService {
     @Transactional
     public IssuedTokens refresh(String rawRefreshToken, String userAgent, String ipAddress) {
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
-            throw ApiException.unauthorized("Missing refresh token");
+            throw new AuthenticationFailedException("Missing refresh token");
         }
 
         String hash = TokenHasher.sha256Hex(rawRefreshToken);
         RefreshToken stored = refreshTokenRepository.findByTokenHash(hash)
-                .orElseThrow(() -> ApiException.unauthorized("Invalid refresh token"));
+                .orElseThrow(() -> new AuthenticationFailedException("Invalid refresh token"));
 
         if (stored.isRevoked()) {
             // Reuse of a revoked token is a signal of theft: kill the entire session family.
             refreshTokenRepository.revokeAllForUser(stored.getUserId());
-            throw ApiException.unauthorized("Refresh token has been revoked");
+            throw new AuthenticationFailedException("Refresh token has been revoked");
         }
 
         if (stored.getExpiresAt().isBefore(Instant.now())) {
-            throw ApiException.unauthorized("Refresh token has expired");
+            throw new AuthenticationFailedException("Refresh token has expired");
         }
 
         stored.setRevoked(true);
         refreshTokenRepository.save(stored);
 
         User user = userRepository.findById(stored.getUserId())
-                .orElseThrow(() -> ApiException.unauthorized("User no longer exists"));
+                .orElseThrow(() -> new AuthenticationFailedException("User no longer exists"));
 
         return issueTokens(user, userAgent, ipAddress);
     }
@@ -102,7 +104,7 @@ public class AuthService {
     public void revokeSession(UUID userId, UUID sessionId) {
         int updated = refreshTokenRepository.revokeOne(sessionId, userId);
         if (updated == 0) {
-            throw ApiException.notFound("Session not found");
+            throw new ResourceNotFoundException("Session not found");
         }
     }
 

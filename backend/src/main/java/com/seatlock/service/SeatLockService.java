@@ -1,7 +1,8 @@
 package com.seatlock.service;
 
 import com.seatlock.entity.Seat;
-import com.seatlock.exception.ApiException;
+import com.seatlock.exception.ResourceNotFoundException;
+import com.seatlock.exception.SeatConflictException;
 import com.seatlock.repository.SeatRepository;
 import com.seatlock.websocket.SeatBroadcastPublisher;
 import io.micrometer.core.instrument.Counter;
@@ -54,13 +55,14 @@ public class SeatLockService {
         if (updated == 0) {
             lockConflictCounter.increment();
             if (!seatRepository.existsById(seatId)) {
-                throw ApiException.notFound("Seat not found");
+                throw new ResourceNotFoundException("Seat not found");
             }
-            throw ApiException.conflict("Seat is not available");
+            throw new SeatConflictException("Seat is not available");
         }
 
         lockSuccessCounter.increment();
-        Seat seat = seatRepository.findById(seatId).orElseThrow(() -> ApiException.notFound("Seat not found"));
+        Seat seat = seatRepository.findById(seatId)
+                .orElseThrow(() -> new ResourceNotFoundException("Seat not found"));
         broadcastPublisher.publishAfterCommit(seat.getEventId(), seat);
         return seat;
     }
@@ -69,10 +71,11 @@ public class SeatLockService {
     public void release(UUID seatId, UUID userId) {
         int updated = seatRepository.releaseLock(seatId, userId);
         if (updated == 0) {
-            throw ApiException.conflict("Seat is not locked by you");
+            throw new SeatConflictException("Seat is not locked by you");
         }
 
-        Seat seat = seatRepository.findById(seatId).orElseThrow(() -> ApiException.notFound("Seat not found"));
+        Seat seat = seatRepository.findById(seatId)
+                .orElseThrow(() -> new ResourceNotFoundException("Seat not found"));
         broadcastPublisher.publishAfterCommit(seat.getEventId(), seat);
     }
 }

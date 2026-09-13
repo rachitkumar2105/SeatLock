@@ -5,7 +5,8 @@ import com.seatlock.entity.BookingStatus;
 import com.seatlock.entity.Event;
 import com.seatlock.entity.EventStatus;
 import com.seatlock.entity.SeatStatus;
-import com.seatlock.exception.ApiException;
+import com.seatlock.exception.ConflictException;
+import com.seatlock.exception.ResourceNotFoundException;
 import com.seatlock.repository.BookingRepository;
 import com.seatlock.repository.EventRepository;
 import com.seatlock.repository.SeatRepository;
@@ -54,7 +55,7 @@ public class EventService {
 
     public Event getById(UUID id) {
         return eventRepository.findById(id)
-                .orElseThrow(() -> ApiException.notFound("Event not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Event not found"));
     }
 
     @Transactional
@@ -83,7 +84,7 @@ public class EventService {
     public Event publish(UUID id) {
         Event event = getById(id);
         if (event.getStatus() != EventStatus.DRAFT) {
-            throw ApiException.conflict("Only a DRAFT event can be published");
+            throw new ConflictException("Only a DRAFT event can be published");
         }
         event.setStatus(EventStatus.PUBLISHED);
         return eventRepository.save(event);
@@ -93,7 +94,7 @@ public class EventService {
     public Event cancel(UUID id) {
         Event event = getById(id);
         if (event.getStatus() == EventStatus.CANCELLED) {
-            throw ApiException.conflict("Event is already cancelled");
+            throw new ConflictException("Event is already cancelled");
         }
         event.setStatus(EventStatus.CANCELLED);
         return eventRepository.save(event);
